@@ -1,0 +1,248 @@
+---
+title: "Course Project"
+author: "Margerys Salgado"
+date: "14/6/2019"
+output: html_document
+---
+
+# Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively.
+
+These type of devices are part of the quantified self movement a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks.
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+In this project, your goal will be to use data(6 participants) from  accelerometers on the:
+- belt (cintura),
+- forearm (antebrazo),
+- arm (brazo),
+
+They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+# Data
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+# What you should submit
+- The goal of your project is to predict the manner in which they did the exercise.
+- This is the "classe" variable in the training set.
+- You may use any of the other variables to predict with.
+- You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did.
+- You will also use your prediction model to predict 20 different test cases.
+
+## Peer Review Portion
+- Your submission for the Peer Review portion should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis.
+- Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5. It will make it easier for the graders if you submit a repo with a gh-pages branch so the HTML page can be viewed online (and you always want to make it easy on graders :-).
+
+## Course Project Prediction Quiz Portion
+Apply your machine learning algorithm to the 20 test cases available in the test data above and submit your predictions in appropriate format to the Course Project Prediction Quiz for automated grading.
+
+# Reproducibility
+Due to security concerns with the exchange of R code, your code will not be run during the evaluation by your classmates. Please be sure that if they download the repo, they will be able to view the compiled HTML version of your analysis.
+
+# Librerias Utilizadas
+```{r, comment="", warning=F, message=F, echo=T} 
+rm(list = ls())
+
+library(ggplot2)
+library(caret)
+library(pgmm)
+library(rpart)
+library(rpart.plot)
+library(e1071)
+library(rpart)
+library(rattle)
+library(tidyverse)
+library(randomForest)
+library(readabs)
+library(gbm)
+library(knitr)
+set.seed(12345)
+
+```
+
+## Data
+Download the training and testing data sets from the given URLs.
+We are trying to predict the outcome of the variable classe in the training set.
+
+```{r, comment="", warning=F, message=F, echo=T} 
+# The training data:
+training <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"), na.strings = c("NA", ""))
+
+# The test data:
+testing <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"), na.strings = c("NA", ""))
+
+inTrain  <- createDataPartition(training$classe, p=0.7, list=FALSE)
+TrainD <- training[inTrain, ]
+TestD  <- training[-inTrain, ]
+
+dim(TrainD)
+dim(TestD)
+```
+
+## Limpieza de data
+Delete columns (predictors) of the training set that contain any missing values.
+Remove variables with Nearly Zero Variance, mostly NA and identification only variables (columns 1 to 5).
+
+```{r, comment="", warning=F, message=F, echo=T} 
+NZV <- nearZeroVar(TrainD)
+TrainD <- TrainD[, -NZV]
+TestD  <- TestD[, -NZV]
+
+AllNA    <- sapply(TrainD, function(x) mean(is.na(x))) > 0.95
+TrainD <- TrainD[, AllNA==FALSE]
+TestD  <- TestD[, AllNA==FALSE]
+
+TrainD <- TrainD[, -(1:5)]
+TestD  <- TestD[, -(1:5)]
+
+dim(TrainD)
+dim(TestD)
+```
+
+## create a partition with the training dataset
+Split the cleaned training set trainData into a training set (train, 70%) for prediction and a validation set (valid 30%) to compute the out-of-sample errors.
+
+```{r, comment="", warning=F, message=F, echo=T} 
+inTrain <- createDataPartition(TrainD$classe, p = 0.7, list = FALSE)
+train <- TrainD[inTrain, ]
+test <- TrainD[-inTrain, ]
+
+dim(TrainD)
+dim(TestD)
+```
+
+## Prediction Model Building
+
+### Method: Random Forest
+
+```{r, comment="", warning=F, message=F, echo=T} 
+set.seed(12345)
+control1 <- trainControl(method="cv", number=3, verboseIter=FALSE)
+
+modFit1 <- train(classe ~., data=TrainD, method="rf", trControl=control1)
+
+names(modFit1)
+print(modFit1$finalModel)
+
+predict1 <- predict(modFit1, newdata=TestD)
+confMat1 <- confusionMatrix(predict1, TestD$classe)
+confMat1
+
+confMat1$overall
+
+```
+
+### Method: Decision Trees
+
+```{r, comment="", warning=F, message=F, echo=T} 
+set.seed(12345)
+
+modFit2 <- train(classe ~., method= "rpart", data = TrainD)
+modFit2
+
+names(modFit2)
+print(modFit2$finalModel)
+
+plot(modFit2$finalModel, uniform = TRUE, main="classification Trees")
+
+fancyRpartPlot(modFit2$finalModel)
+
+predict(modFit2, newdata = TestD)
+predict2 <- predict(modFit2, newdata = TestD, type="raw")
+
+confMat2 <- confusionMatrix(predict2, TestD$classe)
+confMat2
+
+confMat2$overall
+
+```
+
+### Method: Generalized Boosted Model
+
+```{r, comment="", warning=F, message=F, echo=T} 
+set.seed(12345)
+
+modFit3 <- train(classe ~., method="gbm", data = train, verbose = FALSE)
+modFit3
+
+names(modFit3)
+
+print(modFit3$finalModel)
+
+predict3 <- predict(modFit3, newdata=TestD)
+confMat3 <- confusionMatrix(predict3, TestD$classe)
+confMat3
+
+confMat3$overall
+
+```
+
+## Selected Model to the Test Data
+
+The accuracy of the 3 regression modeling methods.
+The first method was selected: modFit1: Method Random Forest
+
+```{r, comment="", warning=F, message=F, echo=T} 
+
+confMat1$overall ### modFit1: Method Random Forest
+confMat2$overall ### modFit2: Method Decision Trees
+confMat3$overall ### modFit3: Method Generalized Boosted Model
+
+predictTEST <- predict(modFit1, newdata=testing)
+predictTEST
+
+```
+
+
+
+
+
+
+```{r, comment="", warning=F, message=F, echo=T} 
+
+
+
+
+
+```
+
+
+
+
+
+
+```{r, comment="", warning=F, message=F, echo=T} 
+
+
+
+
+
+```
+
+
+
+
+
+
+```{r, comment="", warning=F, message=F, echo=T} 
+
+
+
+
+
+```
+
+
+
+
